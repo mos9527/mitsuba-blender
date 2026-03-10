@@ -150,13 +150,8 @@ def create_mesh(new_meshes,
                 ):
     """
     Takes all the data gathered and generates a mesh, adding the new object to new_objects
-    deals with ngons, sharp edges and assigning materials
+    deals with ngons and assigning materials
     """
-
-    if unique_smooth_groups:
-        sharp_edges = set()
-        smooth_group_users = {context_smooth_group: {} for context_smooth_group in unique_smooth_groups.keys()}
-        context_smooth_group_old = -1
 
     fgon_edges = set()  # Used for storing fgon keys when we need to tessellate/untessellate them (ngons with hole).
     edges = []
@@ -189,19 +184,6 @@ def create_mesh(new_meshes,
             faces.pop(f_idx)
 
         else:
-            # Smooth Group
-            if unique_smooth_groups and context_smooth_group:
-                # Is a part of of a smooth group and is a face
-                if context_smooth_group_old is not context_smooth_group:
-                    edge_dict = smooth_group_users[context_smooth_group]
-                    context_smooth_group_old = context_smooth_group
-
-                prev_vidx = face_vert_loc_indices[-1]
-                for vidx in face_vert_loc_indices:
-                    edge_key = (prev_vidx, vidx) if (prev_vidx < vidx) else (vidx, prev_vidx)
-                    prev_vidx = vidx
-                    edge_dict[edge_key] = edge_dict.get(edge_key, 0) + 1
-
             # NGons into triangles
             if face_invalid_blenpoly:
                 # ignore triangles with invalid indices
@@ -248,13 +230,6 @@ def create_mesh(new_meshes,
             else:
                 tot_loops += len_face_vert_loc_indices
 
-    # Build sharp edges
-    if unique_smooth_groups:
-        for edge_dict in smooth_group_users.values():
-            for key, users in edge_dict.items():
-                if users == 1:  # This edge is on the boundary of a group
-                    sharp_edges.add(key)
-
     me = bpy.data.meshes.new(dataname)
 
     me.vertices.add(len(verts_loc))
@@ -278,13 +253,13 @@ def create_mesh(new_meshes,
     me.polygons.foreach_set("loop_start", faces_loop_start)
     me.polygons.foreach_set("loop_total", faces_loop_total)
 
-    faces_use_smooth = tuple(bool(context_smooth_group) for (_, _, _, context_smooth_group, _, _) in faces)
+    faces_use_smooth = tuple(True for (_, _, _, context_smooth_group, _, _) in faces)
     me.polygons.foreach_set("use_smooth", faces_use_smooth)
 
     if verts_nor and me.loops:
         # Note: we store 'temp' normals in loops, since validate() may alter final mesh,
         #       we can only set custom lnors *after* calling it.
-        me.create_normals_split()
+        # me.create_normals_split()
         loops_nor = tuple(no for (_, face_vert_nor_indices, _, _, _, _) in faces
                              for face_noidx in face_vert_nor_indices
                              for no in verts_nor[face_noidx])
@@ -326,12 +301,6 @@ def create_mesh(new_meshes,
         bm.to_mesh(me)
         bm.free()
 
-    # XXX If validate changes the geometry, this is likely to be broken...
-    if unique_smooth_groups and sharp_edges:
-        for e in me.edges:
-            if e.key in sharp_edges:
-                e.use_edge_sharp = True
-
     if verts_nor:
         clnors = array.array('f', [0.0] * (len(me.loops) * 3))
         me.loops.foreach_get("normal", clnors)
@@ -340,7 +309,7 @@ def create_mesh(new_meshes,
             me.polygons.foreach_set("use_smooth", [True] * len(me.polygons))
 
         me.normals_split_custom_set(tuple(zip(*(iter(clnors),) * 3)))
-        me.use_auto_smooth = True
+        # me.use_auto_smooth = True
 
     new_meshes.append(me)
 

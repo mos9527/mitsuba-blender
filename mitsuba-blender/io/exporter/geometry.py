@@ -63,9 +63,6 @@ def convert_mesh(export_ctx, b_mesh, matrix_world, name, mat_nr):
     else:
         props['loops'] = b_mesh.loops[0].as_pointer()
 
-    if 'sharp_face' in b_mesh.attributes:
-        props['sharp_face'] = b_mesh.attributes['sharp_face'].data[0].as_pointer()
-
     if bpy.app.version >= (3, 6, 0):
         props['polys'] = b_mesh.loop_triangle_polygons[0].as_pointer()
     else:

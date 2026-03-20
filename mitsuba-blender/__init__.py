@@ -5,7 +5,7 @@ bl_info = {
     'blender': (2, 93, 0),
     'category': 'Render',
     'location': 'File menu, render engine menu',
-    'description': 'Mitsuba integration for Blender',
+    'description': 'Mitsuba XML import/export for Blender (Cycles)',
     'wiki_url': 'https://github.com/mitsuba-renderer/mitsuba-blender/wiki',
     'tracker_url': 'https://github.com/mitsuba-renderer/mitsuba-blender/issues/new/choose',
     'warning': 'alpha',

@@ -215,8 +215,8 @@ def load_mitsuba_scene(bl_context, bl_scene, bl_collection, filepath, global_mat
     mi.parser.transform_all(config, mi_state)
     mi_context = common.MitsubaSceneImportContext(bl_context, bl_scene, bl_collection, filepath, mi_state, global_mat)
 
-    # Initialize the Mitsuba renderer inside of Blender
-    renderer.init_mitsuba_renderer(mi_context)
+    # Initialize Cycles renderer with GPU compute
+    renderer.init_cycles_renderer(mi_context)
 
     # Convert the Mitsuba scene state to a Blender scene
     #TODO: error checking

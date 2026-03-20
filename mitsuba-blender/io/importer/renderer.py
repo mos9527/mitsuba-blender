@@ -52,61 +52,53 @@ def mi_componentformat_to_bl_componentformat(mi_context, mi_component_format):
 #############################
 
 def apply_mi_path_properties(mi_context, mi_props, bl_props=None):
-    bl_integrator = mi_context.bl_scene.mitsuba if bl_props is None else bl_props
-    bl_path_props = getattr(bl_integrator.available_integrators, 'path', None)
-    if bl_path_props is None:
-        mi_context.log(f'Mitsuba Integrator "path" is not supported.', 'ERROR')
-        return False
-    bl_integrator.active_integrator = 'path'
-    bl_path_props.max_depth = mi_props.get('max_depth', -1)
-    bl_path_props.rr_depth = mi_props.get('rr_depth', 5)
-    bl_path_props.hide_emitters = mi_props.get('hide_emitters', False)
-
     # Cycles properties
-    if bl_props is None:
-        bl_renderer = mi_context.bl_scene.cycles
+    bl_renderer = mi_context.bl_scene.cycles
+    if hasattr(bl_renderer, 'progressive'):
         bl_renderer.progressive = 'PATH'
-        bl_max_bounces = mi_props.get('max_depth', 1024)
-        bl_renderer.max_bounces = bl_max_bounces
-        bl_renderer.diffuse_bounces = bl_max_bounces
-        bl_renderer.glossy_bounces = bl_max_bounces
-        bl_renderer.transparent_max_bounces = bl_max_bounces
-        bl_renderer.transmission_bounces = bl_max_bounces
-        bl_renderer.volume_bounces = bl_max_bounces
-        bl_renderer.min_light_bounces = mi_props.get('rr_depth', 5)
+    bl_max_bounces = mi_props.get('max_depth', 1024)
+    bl_renderer.max_bounces = bl_max_bounces
+    bl_renderer.diffuse_bounces = bl_max_bounces
+    bl_renderer.glossy_bounces = bl_max_bounces
+    bl_renderer.transparent_max_bounces = bl_max_bounces
+    bl_renderer.transmission_bounces = bl_max_bounces
+    bl_renderer.volume_bounces = bl_max_bounces
+    bl_renderer.min_light_bounces = mi_props.get('rr_depth', 5)
+
+    return True
+
+def apply_mi_volpath_properties(mi_context, mi_props, bl_props=None):
+    # volpath maps to Cycles path integrator (Cycles handles volumes natively)
+    mi_context.log('Mitsuba Integrator "volpath" maps to path integrator in Cycles.', 'WARN')
+
+    bl_renderer = mi_context.bl_scene.cycles
+    if hasattr(bl_renderer, 'progressive'):
+        bl_renderer.progressive = 'PATH'
+    bl_max_bounces = mi_props.get('max_depth', 1024)
+    bl_renderer.max_bounces = bl_max_bounces
+    bl_renderer.diffuse_bounces = bl_max_bounces
+    bl_renderer.glossy_bounces = bl_max_bounces
+    bl_renderer.transparent_max_bounces = bl_max_bounces
+    bl_renderer.transmission_bounces = bl_max_bounces
+    bl_renderer.volume_bounces = bl_max_bounces
+    bl_renderer.min_light_bounces = mi_props.get('rr_depth', 5)
 
     return True
 
 def apply_mi_moment_properties(mi_context, mi_props, bl_props=None):
-    from mitsuba import ObjectType
-    if bl_props is not None:
-        # FIXME: support moment integrator nesting
-        mi_context.log('Mitsuba Integrator "moment" does not support being nested yet.', 'ERROR')
-        return False
+    # Moment integrator maps to path in Cycles
+    mi_context.log('Mitsuba Integrator "moment" maps to path integrator in Cycles.', 'WARN')
 
-    mi_renderer = mi_context.bl_scene.mitsuba
-    bl_moment_props = getattr(mi_renderer.available_integrators, 'moment', None)
-    if bl_moment_props is None:
-        mi_context.log(f'Mitsuba Integrator "moment" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_renderer.active_integrator = 'moment'
-    bl_child_integrator_list = bl_moment_props.integrators
-
-    mi_integrators = get_references_by_type(mi_context, mi_props, [ObjectType.Integrator])
-    for integrator_id in mi_integrators:
-        mi_integrator_props = mi_context.mi_state.nodes[integrator_id].props
-        bl_child_integrator_list.new(name=mi_integrator_props.id())
-        bl_child_integrator = bl_child_integrator_list.collection[bl_child_integrator_list.count-1]
-        if not apply_mi_integrator_properties(mi_context, mi_integrator_props, bl_child_integrator):
-            return False
-    # Cycles properties
-    mi_context.log('Mitsuba Integrator "moment" is not supported in Blender Cycles', 'WARN')
+    # Cycles properties — fall back to path defaults
+    bl_renderer = mi_context.bl_scene.cycles
+    if hasattr(bl_renderer, 'progressive'):
+        bl_renderer.progressive = 'PATH'
 
     return True
 
 _mi_integrator_properties_converters = {
     'path': apply_mi_path_properties,
+    'volpath': apply_mi_volpath_properties,
     'moment': apply_mi_moment_properties,
 }
 
@@ -115,7 +107,7 @@ def apply_mi_integrator_properties(mi_context, mi_props, bl_integrator_props=Non
     if mi_integrator_type not in _mi_integrator_properties_converters:
         mi_context.log(f'Mitsuba Integrator "{mi_integrator_type}" is not supported.', 'ERROR')
         return False
-    
+
     return _mi_integrator_properties_converters[mi_integrator_type](mi_context, mi_props, bl_integrator_props)
 
 ##########################
@@ -123,42 +115,20 @@ def apply_mi_integrator_properties(mi_context, mi_props, bl_integrator_props=Non
 ##########################
 
 def apply_mi_tent_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
-    bl_box_props = getattr(mi_camera.rfilters, 'tent', None)
-    if bl_box_props is None:
-        mi_context.log(f'Mitsuba Reconstruction Filter "tent" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_rfilter = 'tent'
     # Cycles properties
     # NOTE: Cycles does not have any equivalent to the tent filter
 
     return True
 
 def apply_mi_box_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
     bl_renderer = mi_context.bl_scene.cycles
-    bl_box_props = getattr(mi_camera.rfilters, 'box', None)
-    if bl_box_props is None:
-        mi_context.log(f'Mitsuba Reconstruction Filter "box" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_rfilter = 'box'
     # Cycles properties
     bl_renderer.pixel_filter_type = 'BOX'
 
     return True
 
 def apply_mi_gaussian_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
     bl_renderer = mi_context.bl_scene.cycles
-    bl_box_props = getattr(mi_camera.rfilters, 'gaussian', None)
-    if bl_box_props is None:
-        mi_context.log(f'Mitsuba Reconstruction Filter "gaussian" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_rfilter = 'gaussian'
-    bl_box_props.stddev = mi_props.get('stddev', 0.5)
     # Cycles properties
     bl_renderer.pixel_filter_type = 'GAUSSIAN'
     bl_renderer.filter_width = mi_props.get('stddev', 0.5)
@@ -175,7 +145,7 @@ def apply_mi_rfilter_properties(mi_context, mi_props):
     if mi_rfilter_type not in _mi_rfilter_properties_converters:
         mi_context.log(f'Mitsuba Reconstruction Filter "{mi_rfilter_type}" is not supported.', 'ERROR')
         return False
-    
+
     return _mi_rfilter_properties_converters[mi_rfilter_type](mi_context, mi_props)
 
 ##########################
@@ -183,16 +153,7 @@ def apply_mi_rfilter_properties(mi_context, mi_props):
 ##########################
 
 def apply_mi_independent_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
     bl_renderer = mi_context.bl_scene.cycles
-    bl_independent_props = getattr(mi_camera.samplers, 'independent', None)
-    if bl_independent_props is None:
-        mi_context.log(f'Mitsuba Sampler "independent" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_sampler = 'independent'
-    bl_independent_props.sample_count = mi_props.get('sample_count', 4)
-    bl_independent_props.seed = mi_props.get('seed', 0)
     # Cycles properties
     if bpy.app.version < (3, 5, 0):
         bl_renderer.sampling_pattern = 'SOBOL'
@@ -206,17 +167,7 @@ def apply_mi_independent_properties(mi_context, mi_props):
     return True
 
 def apply_mi_stratified_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
     bl_renderer = mi_context.bl_scene.cycles
-    bl_stratified_props = getattr(mi_camera.samplers, 'stratified', None)
-    if bl_stratified_props is None:
-        mi_context.log(f'Mitsuba Sampler "stratified" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_sampler = 'stratified'
-    bl_stratified_props.sample_count = mi_props.get('sample_count', 4)
-    bl_stratified_props.seed = mi_props.get('seed', 0)
-    bl_stratified_props.jitter = mi_props.get('jitter', True)
     # Cycles properties
     if bpy.app.version < (3, 5, 0):
         bl_renderer.sampling_pattern = 'SOBOL'
@@ -229,17 +180,7 @@ def apply_mi_stratified_properties(mi_context, mi_props):
     return True
 
 def apply_mi_multijitter_properties(mi_context, mi_props):
-    mi_camera = mi_context.bl_scene.camera.data.mitsuba
     bl_renderer = mi_context.bl_scene.cycles
-    bl_multijitter_props = getattr(mi_camera.samplers, 'multijitter', None)
-    if bl_multijitter_props is None:
-        mi_context.log(f'Mitsuba Sampler "multijitter" is not supported.', 'ERROR')
-        return False
-    # Mitsuba properties
-    mi_camera.active_sampler = 'multijitter'
-    bl_multijitter_props.sample_count = mi_props.get('sample_count', 4)
-    bl_multijitter_props.seed = mi_props.get('seed', 0)
-    bl_multijitter_props.jitter = mi_props.get('jitter', True)
     # Cycles properties
     if bpy.app.version < (3, 0, 0):
         bl_renderer.sampling_pattern = 'CORRELATED_MUTI_JITTER'
@@ -262,7 +203,7 @@ def apply_mi_sampler_properties(mi_context, mi_props):
     if mi_sampler_type not in _mi_sampler_properties_converters:
         mi_context.log(f'Mitsuba Sampler "{mi_sampler_type}" is not supported.', 'ERROR')
         return False
-    
+
     return _mi_sampler_properties_converters[mi_sampler_type](mi_context, mi_props)
 
 #######################
@@ -302,18 +243,14 @@ def apply_mi_film_properties(mi_context, mi_props):
     if mi_film_type not in _mi_film_properties_converters:
         mi_context.log(f'Mitsuba Film "{mi_film_type}" is not supported.', 'ERROR')
         return False
-    
+
     return _mi_film_properties_converters[mi_film_type](mi_context, mi_props)
 
 ###########################
 ##  Renderer properties  ##
 ###########################
 
-def init_mitsuba_renderer(mi_context):
-    mi_context.bl_scene.render.engine = 'MITSUBA'
-    mi_renderer = mi_context.bl_scene.mitsuba
-    if 'scalar_rgb' not in mi_renderer.variants():
-        mi_context.log('Mitsuba variant "scalar_rgb" not available.', 'ERROR')
-        return False
-    mi_renderer.variant = 'scalar_rgb'
+def init_cycles_renderer(mi_context):
+    mi_context.bl_scene.render.engine = 'CYCLES'
+    mi_context.bl_scene.cycles.device = 'GPU'
     return True

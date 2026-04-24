@@ -19,7 +19,7 @@ _fileformat_values = {
 
 def mi_fileformat_to_bl_fileformat(mi_context, mi_file_format):
     if mi_file_format not in _fileformat_values:
-        mi_context.log(f'Mitsuba Film image file format "{mi_file_format}" is not supported.', 'ERROR')
+        mi_context.log(f'Mitsuba Film image file format "{mi_file_format}" has no direct Blender equivalent; leaving it unchanged.', 'WARN')
         return None
     return _fileformat_values[mi_file_format]
 
@@ -31,7 +31,7 @@ _pixelformat_values = {
 
 def mi_pixelformat_to_bl_pixelformat(mi_context, mi_pixel_format):
     if mi_pixel_format not in _pixelformat_values:
-        mi_context.log(f'Mitsuba Film image pixel format "{mi_pixel_format}" is not supported.', 'ERROR')
+        mi_context.log(f'Mitsuba Film image pixel format "{mi_pixel_format}" has no direct Blender equivalent; leaving it unchanged.', 'WARN')
         return None
     return _pixelformat_values[mi_pixel_format]
 
@@ -43,7 +43,7 @@ _componentformat_values = {
 
 def mi_componentformat_to_bl_componentformat(mi_context, mi_component_format):
     if mi_component_format not in _componentformat_values:
-        mi_context.log(f'Mitsuba Film image component format "{mi_component_format}" is not supported.', 'ERROR')
+        mi_context.log(f'Mitsuba Film image component format "{mi_component_format}" has no direct Blender equivalent; leaving it unchanged.', 'WARN')
         return None
     return _componentformat_values[mi_component_format]
 
@@ -222,9 +222,19 @@ def apply_mi_hdrfilm_properties(mi_context, mi_props):
     render_dims = (mi_props.get('width', 768), mi_props.get('height', 576))
     mi_context.bl_scene.render.resolution_x = render_dims[0]
     mi_context.bl_scene.render.resolution_y = render_dims[1]
-    mi_context.bl_scene.render.image_settings.file_format = mi_fileformat_to_bl_fileformat(mi_context, mi_props.get('file_format', 'openexr'))
-    mi_context.bl_scene.render.image_settings.color_mode = mi_pixelformat_to_bl_pixelformat(mi_context, mi_props.get('pixel_format', 'rgba'))
-    mi_context.bl_scene.render.image_settings.color_depth = mi_componentformat_to_bl_componentformat(mi_context, mi_props.get('component_format', 'float16'))
+
+    # Only apply format properties when they map cleanly to Blender. Unsupported values
+    # are logged as WARN inside the helpers and return None, which we skip here instead of
+    # assigning None to Blender properties (which would raise).
+    bl_fileformat = mi_fileformat_to_bl_fileformat(mi_context, mi_props.get('file_format', 'openexr'))
+    if bl_fileformat is not None:
+        mi_context.bl_scene.render.image_settings.file_format = bl_fileformat
+    bl_pixelformat = mi_pixelformat_to_bl_pixelformat(mi_context, mi_props.get('pixel_format', 'rgba'))
+    if bl_pixelformat is not None:
+        mi_context.bl_scene.render.image_settings.color_mode = bl_pixelformat
+    bl_componentformat = mi_componentformat_to_bl_componentformat(mi_context, mi_props.get('component_format', 'float16'))
+    if bl_componentformat is not None:
+        mi_context.bl_scene.render.image_settings.color_depth = bl_componentformat
 
     crop_keys = ['crop_offset_x', 'crop_offset_y', 'crop_width', 'crop_height']
     if any(key in mi_props for key in crop_keys):
@@ -241,15 +251,27 @@ def apply_mi_hdrfilm_properties(mi_context, mi_props):
         mi_context.bl_scene.render.border_max_y = (offset_y + height) / render_dims[1]
     return True
 
+def apply_mi_ldrfilm_properties(mi_context, mi_props):
+    # ldrfilm has the same resolution / crop semantics as hdrfilm; reuse the handler. Any
+    # low-dynamic-range file/pixel/component formats (png / jpeg / rgb / uint8 ...) will
+    # fall through the WARN-and-skip path added to the *_to_bl_* helpers above.
+    return apply_mi_hdrfilm_properties(mi_context, mi_props)
+
 _mi_film_properties_converters = {
-    'hdrfilm': apply_mi_hdrfilm_properties
+    'hdrfilm': apply_mi_hdrfilm_properties,
+    'ldrfilm': apply_mi_ldrfilm_properties,
 }
 
 def apply_mi_film_properties(mi_context, mi_props):
     mi_film_type = mi_props.plugin_name()
     if mi_film_type not in _mi_film_properties_converters:
-        mi_context.log(f'Mitsuba Film "{mi_film_type}" is not supported.', 'ERROR')
-        return False
+        # Don't error out on exotic films (tonemapfilm, specfilm, ...). The modified
+        # plugin does not strictly need the film settings propagated, so skip quietly.
+        mi_context.log(
+            f'Mitsuba Film "{mi_film_type}" has no direct Blender equivalent; skipping film configuration.',
+            'INFO',
+        )
+        return True
 
     return _mi_film_properties_converters[mi_film_type](mi_context, mi_props)
 

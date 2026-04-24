@@ -103,10 +103,17 @@ _mi_integrator_properties_converters = {
 }
 
 def apply_mi_integrator_properties(mi_context, mi_props, bl_integrator_props=None):
+    # The modified plugin does not need to configure the Cycles integrator from Mitsuba's
+    # integrator node. Known integrators (path / volpath / moment) still get translated
+    # to set sane bounce defaults, but any unknown integrator (e.g. "sppm", "bdpt",
+    # "ptracer", ...) is silently skipped instead of raising an ERROR.
     mi_integrator_type = mi_props.plugin_name()
     if mi_integrator_type not in _mi_integrator_properties_converters:
-        mi_context.log(f'Mitsuba Integrator "{mi_integrator_type}" is not supported.', 'ERROR')
-        return False
+        mi_context.log(
+            f'Mitsuba Integrator "{mi_integrator_type}" has no Cycles equivalent; skipping integrator configuration.',
+            'INFO',
+        )
+        return True
 
     return _mi_integrator_properties_converters[mi_integrator_type](mi_context, mi_props, bl_integrator_props)
 
